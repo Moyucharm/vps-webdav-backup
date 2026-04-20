@@ -1,0 +1,14 @@
+[Unit]
+Description=VPS WebDAV Backup Service
+Documentation=https://github.com/your-username/vps-webdav-backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vps-webdav-backup.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
