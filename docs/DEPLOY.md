@@ -78,7 +78,7 @@ EXCLUDE_PATTERNS=(
 )
 
 # Rotation count
-KEEP_COUNT=3
+KEEP_COUNT=5
 ```
 
 #### 4. Enable and Start Timer
@@ -125,7 +125,7 @@ Check your WebDAV storage to confirm the backup file was uploaded:
 
 ```bash
 # List remote backups
-curl -u "username:password" -X PROPFIND "https://your-webdav-server.com/your-backup-folder/" | grep tar.xz
+curl -u "username:password" -X PROPFIND "https://your-webdav-server.com/your-backup-folder/<hostname>/" | grep tar.xz
 ```
 
 ## Configuration Reference
@@ -146,8 +146,14 @@ curl -u "username:password" -X PROPFIND "https://your-webdav-server.com/your-bac
 | `BACKUP_DIRS` | Array of directories to backup | (required) |
 | `EXTRA_FILES` | Array of additional files/directories | (empty) |
 | `EXCLUDE_PATTERNS` | rsync-style exclude patterns | `.git`, `node_modules`, etc. |
-| `KEEP_COUNT` | Number of backups to retain | `3` |
+| `KEEP_COUNT` | Number of backups to retain | `5` |
 | `TMP_DIR` | Temporary directory for archive creation | `/tmp` |
+
+Recommended defaults:
+
+- Remote backups are grouped by host name: `<WEBDAV_PATH>/<hostname>/`
+- Archive names use `backup_YYYYMMDD_HHMMSS.tar.xz`
+- Retention should normally stay at `5`
 
 ## Scheduling
 
@@ -186,6 +192,25 @@ sudo systemctl restart vps-webdav-backup.timer
 ```bash
 systemctl list-timers vps-webdav-backup.timer
 ```
+
+## Deployment Manifest
+
+After installation, record the live state in a server manifest and keep it updated when scope or schedule changes.
+
+Recommended location:
+
+- `/etc/vps-webdav-backup.manifest.md`
+
+The manifest should include:
+
+- Hostname
+- WebDAV URL and remote path
+- `BACKUP_DIRS` and `EXTRA_FILES`
+- Restore targets
+- Reverse proxy configuration, if any
+- Certificate source and renewal method, if any
+- Timer schedule
+- Last successful backup and restore check
 
 ## Troubleshooting
 

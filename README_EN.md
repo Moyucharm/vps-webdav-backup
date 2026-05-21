@@ -73,7 +73,7 @@ journalctl -u vps-webdav-backup.service -f
 | `WEBDAV_USER` | Yes | WebDAV username |
 | `WEBDAV_PASS` | Yes | WebDAV password or token |
 | `WEBDAV_PATH` | Yes | Remote backup directory (e.g., `/backup`) |
-| `KEEP_COUNT` | No | Number of backups to keep (default: 3) |
+| `KEEP_COUNT` | No | Number of backups to keep (default: 5) |
 | `BACKUP_DIRS` | Yes* | Directories to backup (Docker Compose projects) |
 | `EXTRA_FILES` | No | Additional files to backup |
 | `EXCLUDE_PATTERNS` | No | Patterns to exclude from backup |
@@ -85,15 +85,15 @@ journalctl -u vps-webdav-backup.service -f
 ```
 backup_YYYYMMDD_HHMMSS.tar.xz
 ├── dirs/
-│   ├── project1/
+│   ├── home__user__apps__project1/
 │   │   ├── docker-compose.yml
 │   │   ├── .env
 │   │   └── data/
-│   └── project2/
+│   └── home__user__apps__project2/
 │       └── docker-compose.yml
 └── files/
-    ├── Caddyfile
-    └── nginx.conf
+    ├── etc__caddy__Caddyfile
+    └── etc__nginx__nginx.conf
 ```
 
 ## Requirements

@@ -10,6 +10,8 @@
 - **可配置排除规则** - 支持排除模式（如 `.git`、`node_modules`、`*.log`）
 - **Systemd 集成** - 通过 systemd timer 实现每周定时备份
 - **简单恢复** - 在新设备上轻松还原
+- **主机分目录** - 每台主机使用独立 WebDAV 备份目录
+- **自描述清单** - 每个备份包包含 manifest，记录备份内容和恢复目标
 
 ## 快速开始
 
@@ -73,7 +75,7 @@ journalctl -u vps-webdav-backup.service -f
 | `WEBDAV_USER` | 是 | WebDAV 用户名 |
 | `WEBDAV_PASS` | 是 | WebDAV 密码或令牌 |
 | `WEBDAV_PATH` | 是 | 远程备份目录（如 `/backup`） |
-| `KEEP_COUNT` | 否 | 保留备份数量（默认：3） |
+| `KEEP_COUNT` | 否 | 保留备份数量（默认：5） |
 | `BACKUP_DIRS` | 是* | 需备份的目录（Docker Compose 项目） |
 | `EXTRA_FILES` | 否 | 额外需备份的文件 |
 | `EXCLUDE_PATTERNS` | 否 | 备份排除规则 |
@@ -85,16 +87,19 @@ journalctl -u vps-webdav-backup.service -f
 ```
 backup_YYYYMMDD_HHMMSS.tar.xz
 ├── dirs/
-│   ├── project1/
+│   ├── home__user__apps__project1/
 │   │   ├── docker-compose.yml
 │   │   ├── .env
 │   │   └── data/
-│   └── project2/
+│   └── home__user__apps__project2/
 │       └── docker-compose.yml
 └── files/
-    ├── Caddyfile
-    └── nginx.conf
+    ├── etc__caddy__Caddyfile
+    └── etc__nginx__nginx.conf
+└── MANIFEST.txt
 ```
+
+远端 WebDAV 路径按主机名分目录：`<WEBDAV_PATH>/<hostname>/backup_YYYYMMDD_HHMMSS.tar.xz`
 
 ## 系统要求
 

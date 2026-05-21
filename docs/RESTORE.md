@@ -14,10 +14,10 @@ This guide covers how to restore from backups created by VPS WebDAV Backup.
 
 ```bash
 # List available backups
-curl -u "username:password" -X PROPFIND "https://your-webdav-server.com/backup-folder/" | grep tar.xz
+curl -u "username:password" -X PROPFIND "https://your-webdav-server.com/backup-folder/<hostname>/" | grep tar.xz
 
 # Download specific backup
-curl -u "username:password" -O "https://your-webdav-server.com/backup-folder/backup_YYYYMMDD_HHMMSS.tar.xz"
+curl -u "username:password" -O "https://your-webdav-server.com/backup-folder/<hostname>/backup_YYYYMMDD_HHMMSS.tar.xz"
 ```
 
 ### 2. Extract Backup
@@ -29,16 +29,19 @@ tar -xJf backup_YYYYMMDD_HHMMSS.tar.xz -C /tmp/restore
 
 # View backup contents
 ls -la /tmp/restore/backup/
+
+# Read the manifest first
+cat /tmp/restore/backup/MANIFEST.txt
 ```
 
 ### 3. Restore Files
 
 ```bash
 # Restore Docker Compose projects
-cp -r /tmp/restore/backup/dirs/project1 /home/user/apps/
+cp -r /tmp/restore/backup/dirs/home__user__apps__project1 /home/user/apps/
 
 # Restore configuration files
-sudo cp /tmp/restore/backup/files/Caddyfile /etc/caddy/Caddyfile
+sudo cp /tmp/restore/backup/files/etc__caddy__Caddyfile /etc/caddy/Caddyfile
 ```
 
 ### 4. Start Services
@@ -98,14 +101,15 @@ tree /tmp/restore/backup/
 ```
 backup/
 ├── dirs/
-│   └── project_name/
+│   └── home__user__apps__project_name/
 │       ├── docker-compose.yml
 │       ├── .env
 │       ├── Dockerfile (if any)
 │       └── data/ (persistent volumes)
 └── files/
-    ├── Caddyfile
-    └── nginx.conf
+    ├── etc__caddy__Caddyfile
+    └── etc__nginx__nginx.conf
+└── MANIFEST.txt
 ```
 
 ### Step 3: Verify Contents
@@ -113,6 +117,9 @@ backup/
 ```bash
 # Check which projects are in the backup
 ls /tmp/restore/backup/dirs/
+
+# Check the recorded source paths and restore targets
+cat /tmp/restore/backup/MANIFEST.txt
 
 # Check extra files
 ls /tmp/restore/backup/files/
@@ -131,7 +138,7 @@ TARGET_DIR="/home/user/apps/${PROJECT_NAME}"
 mkdir -p "${TARGET_DIR}"
 
 # Copy files
-rsync -av /tmp/restore/backup/dirs/${PROJECT_NAME}/ "${TARGET_DIR}/"
+rsync -av /tmp/restore/backup/dirs/home__user__apps__${PROJECT_NAME}/ "${TARGET_DIR}/"
 
 # Check .env file
 cat "${TARGET_DIR}/.env"
@@ -141,10 +148,10 @@ cat "${TARGET_DIR}/.env"
 
 ```bash
 # Restore Caddy configuration
-sudo cp /tmp/restore/backup/files/Caddyfile /etc/caddy/Caddyfile
+sudo cp /tmp/restore/backup/files/etc__caddy__Caddyfile /etc/caddy/Caddyfile
 
 # Restore Nginx configuration (if applicable)
-sudo cp /tmp/restore/backup/files/nginx.conf /etc/nginx/nginx.conf
+sudo cp /tmp/restore/backup/files/etc__nginx__nginx.conf /etc/nginx/nginx.conf
 
 # Reload web server
 sudo systemctl reload caddy
@@ -194,14 +201,14 @@ You don't have to restore everything. Here's how to restore selectively:
 ```bash
 # Only restore 'specific-project'
 PROJECT_NAME="specific-project"
-rsync -av /tmp/restore/backup/dirs/${PROJECT_NAME}/ /home/user/apps/${PROJECT_NAME}/
+rsync -av /tmp/restore/backup/dirs/home__user__apps__${PROJECT_NAME}/ /home/user/apps/${PROJECT_NAME}/
 ```
 
 ### Restore Only Configuration Files
 
 ```bash
 # Only restore Caddyfile
-sudo cp /tmp/restore/backup/files/Caddyfile /etc/caddy/Caddyfile
+sudo cp /tmp/restore/backup/files/etc__caddy__Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 

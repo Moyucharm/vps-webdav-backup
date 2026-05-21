@@ -29,13 +29,43 @@ source "$CONFIG_FILE"
 : "${WEBDAV_USER:?WEBDAV_USER is required}"
 : "${WEBDAV_PASS:?WEBDAV_PASS is required}"
 : "${WEBDAV_PATH:?WEBDAV_PATH is required}"
-: "${KEEP_COUNT:=3}"
+: "${KEEP_COUNT:=5}"
 : "${TMP_DIR:=/tmp}"
+
+BACKUP_DIRS=("${BACKUP_DIRS[@]:-}")
+EXTRA_FILES=("${EXTRA_FILES[@]:-}")
+EXCLUDE_PATTERNS=("${EXCLUDE_PATTERNS[@]:-}")
+
+HOSTNAME_RAW="$(hostname -s 2>/dev/null || hostname)"
+
+sanitize_name() {
+    local value="$1"
+    value="${value,,}"
+    value="${value//[^a-z0-9._-]/-}"
+    value="${value#-}"
+    value="${value%-}"
+    printf '%s' "${value:-host}"
+}
+
+sanitize_path() {
+    local value="$1"
+    value="${value#/}"
+    value="${value//\//__}"
+    value="${value//[^A-Za-z0-9._-]/-}"
+    value="${value#-}"
+    value="${value%-}"
+    printf '%s' "${value:-path}"
+}
+
+HOSTNAME_SAFE="$(sanitize_name "$HOSTNAME_RAW")"
+REMOTE_BASE_PATH="${WEBDAV_PATH%/}"
+REMOTE_BACKUP_PATH="${REMOTE_BASE_PATH}/${HOSTNAME_SAFE}"
 
 BACKUP_NAME="backup_$(date '+%Y%m%d_%H%M%S')"
 WORK_DIR="${TMP_DIR}/vps-webdav-backup-$$"
 BACKUP_DIR="${WORK_DIR}/backup"
 ARCHIVE_FILE="${TMP_DIR}/${BACKUP_NAME}.tar.xz"
+MANIFEST_FILE="${BACKUP_DIR}/MANIFEST.txt"
 
 cleanup() {
     log "Cleaning up temporary files..."
@@ -45,8 +75,18 @@ cleanup() {
 
 trap cleanup EXIT
 
+ensure_remote_directory() {
+    local url="$1"
+
+    curl -s -o /dev/null -u "${WEBDAV_USER}:${WEBDAV_PASS}" -X MKCOL "$url" >/dev/null 2>&1 || true
+}
+
 log "Starting backup: $BACKUP_NAME"
 log "Work directory: $WORK_DIR"
+log "Remote backup folder: ${REMOTE_BACKUP_PATH}"
+
+ensure_remote_directory "${WEBDAV_URL}${REMOTE_BASE_PATH}"
+ensure_remote_directory "${WEBDAV_URL}${REMOTE_BACKUP_PATH}"
 
 mkdir -p "$BACKUP_DIR/dirs"
 mkdir -p "$BACKUP_DIR/files"
@@ -62,14 +102,14 @@ for backup_dir in "${BACKUP_DIRS[@]:-}"; do
     if [[ -z "$backup_dir" ]]; then
         continue
     fi
-    
+
     if [[ ! -d "$backup_dir" ]]; then
         log "WARNING: Directory not found: $backup_dir"
         continue
     fi
 
-    dir_name=$(basename "$backup_dir")
-    log "Processing directory: $dir_name"
+    dir_name=$(sanitize_path "$backup_dir")
+    log "Processing directory: $backup_dir"
 
     dest_dir="${BACKUP_DIR}/dirs/${dir_name}"
     mkdir -p "$dest_dir"
@@ -95,13 +135,51 @@ for extra_file in "${EXTRA_FILES[@]:-}"; do
 
     log "Backing up extra file: $extra_file"
     
-    file_name=$(basename "$extra_file")
+    file_name=$(sanitize_path "$extra_file")
     if [[ -f "$extra_file" ]]; then
         cp "$extra_file" "${BACKUP_DIR}/files/${file_name}"
     elif [[ -d "$extra_file" ]]; then
-        cp -r "$extra_file" "${BACKUP_DIR}/files/"
+        cp -r "$extra_file" "${BACKUP_DIR}/files/${file_name}"
     fi
 done
+
+{
+    printf 'Backup manifest\n'
+    printf '================\n\n'
+    printf 'Created at: %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')"
+    printf 'Hostname: %s\n' "$HOSTNAME_RAW"
+    printf 'Hostname safe: %s\n' "$HOSTNAME_SAFE"
+    printf 'Archive name: %s.tar.xz\n' "$BACKUP_NAME"
+    printf 'Remote path: %s/%s.tar.xz\n' "$REMOTE_BACKUP_PATH" "$BACKUP_NAME"
+    printf 'Keep count: %s\n' "$KEEP_COUNT"
+    printf 'Config file: %s\n' "$CONFIG_FILE"
+    printf 'Temporary directory: %s\n\n' "$TMP_DIR"
+
+    printf 'Backup directories (%s)\n' "${#BACKUP_DIRS[@]}"
+    printf '%s\n' '----------------------------------------'
+    for backup_dir in "${BACKUP_DIRS[@]:-}"; do
+        [[ -z "$backup_dir" ]] && continue
+        printf 'Source: %s\n' "$backup_dir"
+        printf 'Stored as: dirs/%s\n' "$(sanitize_path "$backup_dir")"
+        printf 'Restore target: %s\n\n' "$backup_dir"
+    done
+
+    printf 'Extra files (%s)\n' "${#EXTRA_FILES[@]}"
+    printf '%s\n' '----------------------------------------'
+    for extra_file in "${EXTRA_FILES[@]:-}"; do
+        [[ -z "$extra_file" ]] && continue
+        printf 'Source: %s\n' "$extra_file"
+        printf 'Stored as: files/%s\n' "$(sanitize_path "$extra_file")"
+        printf 'Restore target: %s\n\n' "$extra_file"
+    done
+
+    printf 'Exclude patterns (%s)\n' "${#EXCLUDE_PATTERNS[@]}"
+    printf '%s\n' '----------------------------------------'
+    for pattern in "${EXCLUDE_PATTERNS[@]:-}"; do
+        [[ -z "$pattern" ]] && continue
+        printf '%s\n' "$pattern"
+    done
+} > "$MANIFEST_FILE"
 
 num_dirs=$(find "${BACKUP_DIR}/dirs" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
 num_files=$(find "${BACKUP_DIR}/files" -type f 2>/dev/null | wc -l)
@@ -115,7 +193,7 @@ log "Archive created: ${BACKUP_NAME}.tar.xz (${ARCHIVE_SIZE})"
 
 upload_to_webdav() {
     local file="$1"
-    local remote_path="${WEBDAV_PATH}/${BACKUP_NAME}.tar.xz"
+    local remote_path="${REMOTE_BACKUP_PATH}/${BACKUP_NAME}.tar.xz"
     local url="${WEBDAV_URL}${remote_path}"
     
     local attempt=1
@@ -145,29 +223,35 @@ upload_to_webdav() {
 }
 
 if ! upload_to_webdav "$ARCHIVE_FILE"; then
-    error_exit "Failed to upload backup after $max_attempts attempts"
+    error_exit "Failed to upload backup after 3 attempts"
 fi
 
 log "Cleaning up old backups on WebDAV..."
 
 list_webdav_files() {
-    local url="${WEBDAV_URL}${WEBDAV_PATH}/"
-    
-    curl -s -X PROPFIND \
+    local url="${WEBDAV_URL}${REMOTE_BACKUP_PATH}/"
+    local response
+
+    if ! response=$(curl -fsS -X PROPFIND \
         -u "${WEBDAV_USER}:${WEBDAV_PASS}" \
         -H "Depth: 1" \
         -H "Content-Type: application/xml; charset=utf-8" \
         -d '<?xml version="1.0"?><propfind xmlns="DAV:"><prop></prop></propfind>' \
-        "$url" 2>/dev/null | \
-    grep -oP '(?<=<d:href>)[^<]+\.tar\.xz' | \
-    sed 's/%20/ /g' | \
-    while read -r href; do
-        basename "$href"
-    done | sort -r
+        "$url" 2>/dev/null); then
+        return 1
+    fi
+
+    printf '%s\n' "$response" | \
+        { grep -Eo 'backup_[0-9]{8}_[0-9]{6}\.tar\.xz' || true; } | \
+        sort -ru
 }
 
-backup_files=$(list_webdav_files)
-backup_count=$(echo "$backup_files" | grep -c . || true)
+if ! backup_files=$(list_webdav_files); then
+    log "WARNING: Failed to list remote backups; skipping rotation"
+    backup_files=""
+fi
+
+backup_count=$(printf '%s\n' "$backup_files" | grep -c . || true)
 
 if [[ $backup_count -gt $KEEP_COUNT ]]; then
     delete_count=$((backup_count - KEEP_COUNT))
@@ -175,16 +259,22 @@ if [[ $backup_count -gt $KEEP_COUNT ]]; then
     
     echo "$backup_files" | tail -n "$delete_count" | while read -r old_file; do
         if [[ -n "$old_file" ]]; then
-            delete_url="${WEBDAV_URL}${WEBDAV_PATH}/${old_file}"
+            delete_url="${WEBDAV_URL}${REMOTE_BACKUP_PATH}/${old_file}"
             log "Deleting: $old_file"
-            curl -s -X DELETE \
+            delete_http_code=$(curl -s -w "%{http_code}" -o /dev/null -X DELETE \
                 -u "${WEBDAV_USER}:${WEBDAV_PASS}" \
-                "$delete_url" > /dev/null
+                "$delete_url")
+
+            if [[ "$delete_http_code" == "200" || "$delete_http_code" == "204" || "$delete_http_code" == "404" ]]; then
+                log "Deleted old backup: $old_file"
+            else
+                log "WARNING: Failed to delete old backup $old_file (HTTP $delete_http_code)"
+            fi
         fi
     done
 fi
 
 log "Backup completed successfully!"
-log "Remote location: ${WEBDAV_URL}${WEBDAV_PATH}/${BACKUP_NAME}.tar.xz"
+log "Remote location: ${WEBDAV_URL}${REMOTE_BACKUP_PATH}/${BACKUP_NAME}.tar.xz"
 
 exit 0

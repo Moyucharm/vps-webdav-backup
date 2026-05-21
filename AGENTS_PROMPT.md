@@ -24,7 +24,9 @@ vps-webdav-backup/
 │   └── vps-webdav-backup.timer
 └── docs/
     ├── DEPLOY.md             # 部署文档
-    └── RESTORE.md            # 恢复文档
+    ├── RESTORE.md            # 恢复文档
+    ├── CONVENTIONS.md        # 项目规范
+    └── SERVER_MANIFEST.example.md # 服务器状态清单模板
 ```
 
 ---
@@ -49,6 +51,9 @@ vps-webdav-backup/
 
 额外文件：
 - /etc/caddy/Caddyfile
+- /etc/nginx/nginx.conf
+- /etc/nginx/sites-available
+- /etc/letsencrypt
 
 定时计划：每周一 03:00
 ```
@@ -101,7 +106,7 @@ WEBDAV_PASS="<用户提供>"
 WEBDAV_PATH="<用户提供>"
 
 # 备份轮转
-KEEP_COUNT=3
+KEEP_COUNT=5
 
 # 需要备份的目录
 BACKUP_DIRS=(
@@ -112,6 +117,9 @@ BACKUP_DIRS=(
 # 额外文件
 EXTRA_FILES=(
     "/etc/caddy/Caddyfile"
+    "/etc/nginx/nginx.conf"
+    "/etc/nginx/sites-available"
+    "/etc/letsencrypt"
 )
 
 # 排除规则
@@ -243,7 +251,7 @@ ls -la backup/files/
 
 ```bash
 PROJECT_NAME="project1"
-SOURCE_DIR="/tmp/restore/backup/dirs/${PROJECT_NAME}"
+SOURCE_DIR="/tmp/restore/backup/dirs/home__user__apps__${PROJECT_NAME}"
 TARGET_DIR="/home/user/apps/${PROJECT_NAME}"
 
 # 检查目标是否存在
@@ -261,7 +269,7 @@ rsync -av "$SOURCE_DIR/" "$TARGET_DIR/"
 
 ```bash
 # 恢复 Caddyfile
-sudo cp /tmp/restore/backup/files/Caddyfile /etc/caddy/Caddyfile
+sudo cp /tmp/restore/backup/files/etc__caddy__Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
@@ -314,6 +322,13 @@ rm -f /path/to/downloaded/backup.tar.xz
    - 推荐安全的凭据处理方式
    - 警告 `.env` 文件权限问题
 
+5. **规范记录**
+   - 每台主机必须有自己的备份目录，目录名使用主机名
+   - 备份压缩包必须带日期时间，格式固定为 `backup_YYYYMMDD_HHMMSS.tar.xz`
+   - 默认保留最近 5 个备份，超出部分自动删除
+   - 新增或修改 `BACKUP_DIRS`、`EXTRA_FILES`、反向代理、证书、定时任务时，必须同步更新服务器清单
+   - 服务器清单必须记录原始路径、存储名称、恢复目标和备注
+
 ### 恢复场景专用
 
 1. **恢复前检查**
@@ -363,8 +378,8 @@ curl -u "${WEBDAV_USER}:${WEBDAV_PASS}" -O "${WEBDAV_URL}${WEBDAV_PATH}/${LATEST
 mkdir -p /tmp/restore && tar -xJf ${LATEST} -C /tmp/restore
 
 # 恢复
-rsync -av /tmp/restore/backup/dirs/project1/ /home/user/apps/project1/
-sudo cp /tmp/restore/backup/files/Caddyfile /etc/caddy/
+rsync -av /tmp/restore/backup/dirs/home__user__apps__project1/ /home/user/apps/project1/
+sudo cp /tmp/restore/backup/files/etc__caddy__Caddyfile /etc/caddy/
 
 # 启动
 cd /home/user/apps/project1 && docker compose up -d
